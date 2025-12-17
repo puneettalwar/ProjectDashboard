@@ -26,7 +26,7 @@ ui <- dashboardPage(
               fluidRow(
                 box(title = "Data Input", width = 12, status = "primary", solidHeader = TRUE,
                     fileInput("file", "Upload CSV/Excel File", accept = c(".csv", ".xlsx")),
-                    textInput("fixed_path", "Or provide fixed file path (auto-refresh)", value = ""),
+                    #textInput("fixed_path", "Or provide fixed file path (auto-refresh)", value = ""),
                     actionButton("load_data", "Load Data")
                 )
               )
@@ -123,17 +123,31 @@ ui <- dashboardPage(
 
 server <- function(input, output, session) {
   
-  data_cache_path <- "data_cache.rds"  # cache file path
+
+  data_cache <- "data_cache.rds"  # cache file path
   
   rv <- reactiveValues(data = NULL, selected_data = NULL, fixed_path = NULL)
   
   isolate({
-    if (file.exists(data_cache_path)) {
-      df <- readRDS(data_cache_path)
+    if (file.exists(data_cache)) {
+      df <- readRDS(data_cache)
       rv$data <- df
       rv$selected_data <- df
     }
   })
+  
+  
+  # data_cache_path <- "data_cache.rds"  # cache file path
+  # 
+  # rv <- reactiveValues(data = NULL, selected_data = NULL, fixed_path = NULL)
+  # 
+  # isolate({
+  #   if (file.exists(data_cache_path)) {
+  #     df <- readRDS(data_cache_path)
+  #     rv$data <- df
+  #     rv$selected_data <- df
+  #   }
+  # })
   
   
   # Reactive file reader if fixed path provided
@@ -151,46 +165,14 @@ server <- function(input, output, session) {
       }
       rv$data <- as.data.frame(df)
       rv$selected_data <- rv$data
-      rv$fixed_path <- NULL
-      saveRDS(rv$data, data_cache_path)
+      #rv$fixed_path <- NULL
+      #saveRDS(rv$data, data_cache_path)
+      saveRDS(rv$data, data_cache)
       showNotification("Data loaded from upload", type = "message")
     }
-    
-    # Fixed path provided
-    else if (input$fixed_path != "") {
-      path <- input$fixed_path
-      if (file.exists(path)) {
-        rv$fixed_path <- path
-        # Setup reactive file reader
-        file_reader <- reactiveFileReader(
-          intervalMillis = 5000,  # check every 5 sec
-          session = session,
-          filePath = path,
-          readFunc = function(f) {
-            ext <- tools::file_ext(f)
-            if (ext == "csv") {
-              read.csv(f)
-            } else if (ext == "xlsx") {
-              readxl::read_excel(f)
-            } else {
-              NULL
-            }
-          }
-        )
-        observe({
-          df <- file_reader()
-          if (!is.null(df)) {
-            rv$data <- as.data.frame(df)
-            rv$selected_data <- rv$data
-            saveRDS(rv$data, data_cache_path)
-            showNotification("Data auto-updated from fixed path", type = "message")
-          }
-        })
-        showNotification("Fixed path linked. Auto-update enabled.", type = "message")
-      } else {
-        showNotification("File at fixed path not found", type = "error")
+      else {
+        showNotification("File not found", type = "error")
       }
-    }
   })
 
   
