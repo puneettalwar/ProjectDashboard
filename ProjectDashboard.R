@@ -48,13 +48,26 @@ ui <- dashboardPage(
                 )
               )
       ),
-      tabItem(tabName = "summary",
-              fluidRow(
-                box(title = "Summary Table", width = 12, status = "primary", solidHeader = TRUE,
-                    gt::gt_output("gtsummary_table")
-                )
-              )
+      tabItem(
+        tabName = "summary",
+        fluidRow(
+          box(
+            title = "Summary Table",
+            width = 12,
+            status = "primary",
+            solidHeader = TRUE,
+            uiOutput("grouping_ui"),
+            gt::gt_output("gtsummary_table")
+          )
+        )
       ),
+      # tabItem(tabName = "summary",
+      #         fluidRow(
+      #           box(title = "Summary Table", width = 12, status = "primary", solidHeader = TRUE,
+      #               gt::gt_output("gtsummary_table")
+      #           )
+      #         )
+      # ),
       tabItem(tabName = "eda",
               fluidRow(
                 box(title = "Dataset Overview", width = 12, status = "info", solidHeader = TRUE,
@@ -123,59 +136,121 @@ ui <- dashboardPage(
 
 server <- function(input, output, session) {
   
-
-  data_cache <- "data_cache.rds"  # cache file path
-  
-  rv <- reactiveValues(data = NULL, selected_data = NULL, fixed_path = NULL)
-  
-  isolate({
-    if (file.exists(data_cache)) {
-      df <- readRDS(data_cache)
-      rv$data <- df
-      rv$selected_data <- df
-    }
-  })
-  
-  
-  # data_cache_path <- "data_cache.rds"  # cache file path
-  # 
+  # data_cache <- "data_cache.rds"  # cache file path
   # rv <- reactiveValues(data = NULL, selected_data = NULL, fixed_path = NULL)
-  # 
+  
   # isolate({
-  #   if (file.exists(data_cache_path)) {
-  #     df <- readRDS(data_cache_path)
+  #   if (file.exists(data_cache)) {
+  #     df <- readRDS(data_cache)
   #     rv$data <- df
   #     rv$selected_data <- df
   #   }
   # })
+  # 
+  # 
+  # # Reactive file reader if fixed path provided
+  # observeEvent(input$load_data, {
+  #   # User uploaded file
+  #   if (!is.null(input$file)) {
+  #     ext <- tools::file_ext(input$file$name)
+  #     if (ext == "csv") {
+  #       df <- read.csv(input$file$datapath)
+  #     } else if (ext == "xlsx") {
+  #       df <- readxl::read_excel(input$file$datapath)
+  #     } else {
+  #       showNotification("Unsupported file type", type = "error")
+  #       return()
+  #     }
+  #     rv$data <- as.data.frame(df)
+  #     rv$selected_data <- rv$data
+  #     #rv$fixed_path <- NULL
+  #     #saveRDS(rv$data, data_cache_path)
+  #     saveRDS(rv$data, data_cache)
+  #     showNotification("Data loaded from upload", type = "message")
+  #   }
+  #   else {
+  #     showNotification("File not found", type = "error")
+  #   }
+  # })
   
+  data_cache <- "last_uploaded_data.rds"  # cache file 
   
-  # Reactive file reader if fixed path provided
-  observeEvent(input$load_data, {
-    # User uploaded file
-    if (!is.null(input$file)) {
-      ext <- tools::file_ext(input$file$name)
-      if (ext == "csv") {
-        df <- read.csv(input$file$datapath)
-      } else if (ext == "xlsx") {
-        df <- readxl::read_excel(input$file$datapath)
-      } else {
-        showNotification("Unsupported file type", type = "error")
-        return()
+  rv <- reactiveValues(
+    data = NULL,
+    selected_data = NULL
+  )
+  
+  # isolate({
+  #   if (file.exists(data_cache)) {
+  #     df <- readRDS(data_cache)
+  #     rv$data <- df
+  #     rv$selected_data <- df
+  #   }
+  # })
+  # 
+  
+  observeEvent(TRUE, {
+    if (file.exists(data_cache)) {
+      df <- tryCatch(
+        readRDS(data_cache),
+        error = function(e) NULL
+      )
+      
+      if (!is.null(df)) {
+        rv$data <- df
+        rv$selected_data <- df
+        showNotification("Loaded last uploaded dataset", type = "message")
       }
-      rv$data <- as.data.frame(df)
-      rv$selected_data <- rv$data
-      #rv$fixed_path <- NULL
-      #saveRDS(rv$data, data_cache_path)
-      saveRDS(rv$data, data_cache)
-      showNotification("Data loaded from upload", type = "message")
     }
-      else {
-        showNotification("File not found", type = "error")
-      }
-  })
-
+  }, once = TRUE)
   
+  observeEvent(input$file, {
+    req(input$file)
+    
+    ext <- tools::file_ext(input$file$name)
+    
+    df <- switch(
+      ext,
+      csv  = read.csv(input$file$datapath),
+      xlsx = readxl::read_excel(input$file$datapath),
+      {
+        showNotification("Unsupported file type", type = "error")
+        return(NULL)
+      }
+    )
+    
+    df <- as.data.frame(df)
+    
+    rv$data <- df
+    rv$selected_data <- df
+    
+    saveRDS(df, data_cache)
+    
+    showNotification("Data loaded and cached successfully", type = "message")
+  })
+  
+  observeEvent(input$file, {
+    req(input$file)
+
+    ext <- tools::file_ext(input$file$name)
+
+    df <- switch(
+      ext,
+      csv  = read.csv(input$file$datapath),
+      xlsx = readxl::read_excel(input$file$datapath),
+      {
+        showNotification("Unsupported file type", type = "error")
+        return(NULL)
+      }
+    )
+
+    rv$data <- as.data.frame(df)
+    rv$selected_data <- rv$data
+
+    showNotification("Data loaded successfully", type = "message")
+  })
+  
+ 
   # Column selection
   output$select_columns_ui <- renderUI({
     req(rv$data)
@@ -203,6 +278,10 @@ server <- function(input, output, session) {
     selectInput('numeric_vars', 'Variables to treat as Numeric', choices = names(rv$selected_data), multiple = TRUE)
   })
   
+  observe({
+    cat("File input:", input$file$name, "\n")
+  })
+  
   # Apply variable types
   observeEvent(input$apply_var_types, {
     req(rv$selected_data)
@@ -225,27 +304,78 @@ server <- function(input, output, session) {
     showNotification('Variable types applied', type = 'message')
   })
   
-  # gtsummary table
+  
+  output$grouping_ui <- renderUI({
+    req(rv$selected_data)
+    
+    selectInput(
+      "group_var",
+      "Grouping Variable (required):",
+      choices = names(rv$selected_data),
+      selected = names(rv$selected_data)[1]
+      # choices = c("None" = "", names(rv$selected_data)),
+      # selected = ""
+    )
+  })
+  
   output$gtsummary_table <- gt::render_gt({
-    df <- rv$selected_data
-    req(df)
-    df %>% tbl_summary(by = Participant,
-                       missing = "no",
-                       digits= everything() ~ 2,
-                       # custom statistic formats ----
-                       statistic = list(all_continuous() ~ "{mean} ({sd})",
-                                        all_categorical() ~ "{p}% ({n} / {N})")
-    ) %>% # don't list missing data separately
-      add_n() %>% # add column with total number of non-missing observations
-      #add_p() %>%  # for Wilcoxon rank sum test and chi square 
-      add_p(
-        test=list(all_continuous() ~ "t.test", all_categorical() ~ "chisq.test")
+
+    req(rv$selected_data, cancelOutput = TRUE)
+    #req(input$group_var, cancelOutput = TRUE)
+    req(input$group_var != "", cancelOutput = TRUE)
+
+    by_var <- if (nzchar(input$group_var)) input$group_var else NULL
+
+    rv$selected_data %>%
+      tbl_summary(
+        by = by_var,
+        missing = "no",
+        digits = everything() ~ 2,
+        statistic = list(
+          all_continuous() ~ "{mean} ({sd})",
+          all_categorical() ~ "{p}% ({n}/{N})"
+        )
       ) %>%
-      modify_header(label = "Variable") %>% # update the column header
+      add_n() %>%
+      add_p(
+        test = list(
+          all_continuous() ~ "t.test",
+          all_categorical() ~ "chisq.test"
+        )
+      ) %>%
+      modify_header(label = "Variable") %>%
       bold_labels() %>%
       as_gt()
   })
   
+  # output$gtsummary_table <- gt::render_gt({
+  #   
+  #   req(rv$selected_data, cancelOutput = TRUE)
+  #   req(!is.null(input$group_var), cancelOutput = TRUE)
+  #   
+  #   by_var <- if (input$group_var != "") input$group_var else NULL
+  #   
+  #   tbl <- rv$selected_data %>%
+  #     tbl_summary(
+  #       by = by_var,
+  #       missing = "no",
+  #       digits = everything() ~ 2,
+  #       statistic = list(
+  #         all_continuous() ~ "{mean} ({sd})",
+  #         all_categorical() ~ "{p}% ({n}/{N})"
+  #       )
+  #     ) %>%
+  #     add_n() %>%
+  #     modify_header(label = "Variable") %>%
+  #     bold_labels()
+  #   
+  #   # ✅ Add p-values ONLY when grouped
+  #   if (!is.null(by_var)) {
+  #     tbl <- tbl %>% add_p()
+  #   }
+  #   
+  #   tbl %>% as_gt()
+  # })
   
   
   # EDA overview table
@@ -338,10 +468,6 @@ server <- function(input, output, session) {
     }
   })
   
-  
-  
-  
-  
   # # SmartEDA report (no browser auto-open, with color theme)
   # output$smarteda_report <- renderUI({
   #   df <- rv$selected_data
@@ -375,7 +501,7 @@ server <- function(input, output, session) {
   output$datatable <- renderDT({
     df <- rv$selected_data
     if (is.null(df)) return(NULL)
-    datatable(df, options = list(scrollX = TRUE, pageLength = 10))
+    datatable(df, options = list(scrollX = TRUE, pageLength = 25))
   })
 }
 
